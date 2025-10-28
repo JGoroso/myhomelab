@@ -1,41 +1,48 @@
-name: CI-CD
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
 
 env:
-  IMAGE: ghcr.io/jgoroso/app-demo
+  IMAGE: ghcr.io/JGoroso/app-demo
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build & Push
-        run: |
-          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest app-demo
-          docker push $IMAGE:${{ github.sha }}
-          docker push $IMAGE:latest
+
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: app-demo/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
 
   deploy:
+    needs: build
     runs-on: self-hosted
-    needs: build-and-push
     steps:
       - uses: actions/checkout@v4
       - name: Deploy with Helm
-        working-directory: app-demo
         run: |
-          helm upgrade --install app-demo ./chart \
-            --set image.repository=ghcr.io/${{ github.repository }} \
-            --set image.tag=${{ github.sha }} \
-            --set image.pullPolicy=Always
+          kubectl create namespace app-demo --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install app-demo app-demo/chart \
+            --namespace app-demo \
+            --set image.repository=${{ env.IMAGE }} \
+            --set image.tag=latest

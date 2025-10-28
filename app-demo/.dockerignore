@@ -1,0 +1,5 @@
+.git
+**/*.save
+**/*.log
+node_modules
+dist
